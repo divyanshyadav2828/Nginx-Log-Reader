@@ -6,7 +6,7 @@ const readline = require('readline');
 const app = express();
 const PORT = 3000;
 const ACCESS_LOG_PATH = path.join(__dirname, 'access.log');
-const ERROR_LOG_PATH = path.join(__dirname, 'error.log'); // <-- Reads your new file
+const ERROR_LOG_PATH = path.join(__dirname, 'error.log');
 
 // --- Regex Patterns ---
 const accessLogRegex = /^([\d\.]+) (.*?) (.*?) \[(.*?)\] "(.*?)" (\d+) (\d+) "(.*?)" "(.*?)"\s*$/;
@@ -237,4 +237,5 @@ app.get('/api/error-logs', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Log viewer server running at http://localhost:${PORT}`);
+
 });
