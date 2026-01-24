@@ -50,5 +50,9 @@ git clone [https://github.com/divyanshyadav2828/Nginx-Log-Reader.git](https://gi
 # Navigate to the directory
 cd Nginx-Log-Reader
 
-# Install dependencies (if applicable, e.g., Python)
-pip install -r requirements.txt
+# Install dependencies 
+npm install
+
+# Start Server
+npm start
+
