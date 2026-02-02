@@ -1,0 +1,25 @@
+{
+  "name": "nginx-log-reader",
+  "version": "2.0.0",
+  "description": "Professional Nginx Log Monitoring Dashboard with Real-time Streaming",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "nginx",
+    "logs",
+    "monitoring",
+    "dashboard"
+  ],
+  "author": "Divyansh Yadav",
+  "license": "ISC",
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "express": "^5.1.0",
+    "socket.io": "^4.7.4",
+    "ua-parser-js": "^2.0.8"
+  }
+}

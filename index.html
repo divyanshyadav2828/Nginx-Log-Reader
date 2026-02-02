@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx Log Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code&display=swap"
+        rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+</head>
+
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-server"></i>
+                </div>
+                <div>
+                    <h1>LogPulse</h1>
+                    <p>Professional Nginx Monitoring</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="live-indicator">
+                    <div class="live-dot"></div>
+                    <span>Live Monitoring</span>
+                </div>
+                <button id="refresh-btn" class="refresh-btn">
+                    <i class="fa-solid fa-sync"></i> Refresh
+                </button>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="dashboard">
+                <i class="fa-solid fa-chart-line"></i> Dashboard
+            </button>
+            <button class="nav-tab" data-tab="access">
+                <i class="fa-solid fa-list"></i> Access Logs
+            </button>
+            <button class="nav-tab" data-tab="error">
+                <i class="fa-solid fa-exclamation-triangle"></i> Error Logs
+                <span id="nav-error-badge" class="badge bg-red-500 hidden">0</span>
+            </button>
+            <button class="nav-tab" data-tab="tail">
+                <i class="fa-solid fa-terminal"></i> Live Tail
+            </button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="tab-dashboard" class="tab-content active">
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon blue">
+                            <i class="fa-solid fa-globe"></i>
+                        </div>
+                        <div class="stat-trend up">
+                            <i class="fa-solid fa-arrow-up"></i> Today
+                        </div>
+                    </div>
+                    <div class="stat-value" id="stat-total-req">0</div>
+                    <div class="stat-label">Total Requests</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon green">
+                            <i class="fa-solid fa-check"></i>
+                        </div>
+                        <div class="stat-trend" id="stat-success-rate-trend">
+                            <i class="fa-regular fa-circle-check"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="stat-success-rate">0%</div>
+                    <div class="stat-label">Success Rate (2xx)</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon red">
+                            <i class="fa-solid fa-bug"></i>
+                        </div>
+                        <div class="stat-trend" id="stat-error-trend">
+                            <span id="stat-today-errors">0</span> today
+                        </div>
+                    </div>
+                    <div class="stat-value" id="stat-error-count">0</div>
+                    <div class="stat-label">Total Errors</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon purple">
+                            <i class="fa-solid fa-network-wired"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="stat-bandwidth">0 MB</div>
+                    <div class="stat-label">Total Bandwidth</div>
+                </div>
+            </div>
+
+            <!-- Charts & Lists -->
+            <div class="charts-grid">
+                <!-- Traffic Chart -->
+                <div class="chart-card">
+                    <div class="chart-title">Traffic Overview (24h)</div>
+                    <div class="chart-container">
+                        <canvas id="trafficChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Status Distribution -->
+                <div class="chart-card">
+                    <div class="chart-title">Status Codes</div>
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Top IPs -->
+                <div class="chart-card">
+                    <div class="chart-title">Top ip Addresses</div>
+                    <div class="top-list" id="top-ips-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Top URLs -->
+                <div class="chart-card">
+                    <div class="chart-title">Most Requested URLs</div>
+                    <div class="top-list" id="top-urls-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Access Logs Tab -->
+        <div id="tab-access" class="tab-content">
+            <div class="content-card">
+                <div class="card-header">
+                    <h2 class="card-title">Access Log Entries</h2>
+                    <div class="text-sm text-secondary">
+                        Showing <span id="access-showing">0</span> of <span id="access-total">0</span>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-row">
+                    <div class="filter-group" style="flex: 2;">
+                        <label>Search</label>
+                        <input type="text" id="access-search" class="filter-input"
+                            placeholder="Search request, agent, referer...">
+                    </div>
+                    <div class="filter-group">
+                        <label>IP Address</label>
+                        <input type="text" id="access-ip" class="filter-input" placeholder="Filter by IP">
+                    </div>
+                    <div class="filter-group">
+                        <label>Status</label>
+                        <input type="text" id="access-status" class="filter-input" placeholder="e.g. 200, 4xx">
+                    </div>
+                    <div class="filter-group">
+                        <label>Date Range</label>
+                        <div class="quick-filters">
+                            <button class="quick-btn active" data-range="all">All</button>
+                            <button class="quick-btn" data-range="today">Today</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="table-container">
+                    <table id="access-table">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Status</th>
+                                <th>Timestamp</th>
+                                <th>Path</th>
+                                <th>IP Address</th>
+                                <th>Size</th>
+                            </tr>
+                        </thead>
+                        <tbody id="access-tbody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination">
+                    <div class="page-info">
+                        Page <span id="access-page">1</span> of <span id="access-pages">1</span>
+                    </div>
+                    <div class="page-buttons">
+                        <button id="access-prev" class="page-btn"><i class="fa-solid fa-chevron-left"></i> Prev</button>
+                        <button id="access-next" class="page-btn">Next <i
+                                class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Logs Tab -->
+        <div id="tab-error" class="tab-content">
+            <div class="content-card">
+                <div class="card-header">
+                    <h2 class="card-title">Error Log Entries</h2>
+                    <div class="text-sm text-secondary">
+                        Showing <span id="error-showing">0</span> of <span id="error-total">0</span>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-row">
+                    <div class="filter-group" style="flex: 2;">
+                        <label>Search Message</label>
+                        <input type="text" id="error-search" class="filter-input" placeholder="Search error message...">
+                    </div>
+                    <div class="filter-group">
+                        <label>Level</label>
+                        <input type="text" id="error-level" class="filter-input" placeholder="error, warn, crit...">
+                    </div>
+                    <div class="filter-group">
+                        <label>Date Range</label>
+                        <div class="quick-filters">
+                            <button class="quick-btn active" data-range="all">All</button>
+                            <button class="quick-btn" data-range="today">Today</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="table-container">
+                    <table id="error-table">
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th>Timestamp</th>
+                                <th>Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="error-tbody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination">
+                    <div class="page-info">
+                        Page <span id="error-page">1</span> of <span id="error-pages">1</span>
+                    </div>
+                    <div class="page-buttons">
+                        <button id="error-prev" class="page-btn"><i class="fa-solid fa-chevron-left"></i> Prev</button>
+                        <button id="error-next" class="page-btn">Next <i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Tail Tab -->
+        <div id="tab-tail" class="tab-content">
+            <div class="content-card">
+                <div class="card-header">
+                    <h2 class="card-title">Live Log Stream</h2>
+                    <div class="live-tail-controls">
+                        <button id="tail-clear" class="quick-btn">Clear</button>
+                        <button id="tail-pause" class="quick-btn">Pause</button>
+                    </div>
+                </div>
+
+                <div class="filters-row" style="background: #0d1117; border-bottom: none; padding-bottom: 0;">
+                    <div class="filter-group">
+                        <label>Stream Source</label>
+                        <div class="quick-filters">
+                            <button class="quick-btn active" id="tail-source-access">Access Log</button>
+                            <button class="quick-btn" id="tail-source-error">Error Log</button>
+                            <button class="quick-btn" id="tail-source-both">Both</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="live-tail-container">
+                    <div id="live-tail-body" class="live-tail-body">
+                        <!-- Stream content -->
+                        <div class="log-line text-muted">Waiting for new logs...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // --- State Management ---
+        const state = {
+            activeTab: 'dashboard',
+            access: { page: 1, limit: 20, total: 0, filters: { search: '', ip: '', status: '', range: 'all' } },
+            error: { page: 1, limit: 20, total: 0, filters: { search: '', level: '', range: 'all' } },
+            tail: { active: true, source: 'access', logs: [] },
+            stats: null,
+            charts: {}
+        };
+
+        const socket = io();
+
+        // --- DOM Elements ---
+        const els = {
+            tabs: document.querySelectorAll('.nav-tab'),
+            contents: document.querySelectorAll('.tab-content'),
+
+            // Access Log
+            accessTbody: document.getElementById('access-tbody'),
+            accessPrev: document.getElementById('access-prev'),
+            accessNext: document.getElementById('access-next'),
+            accessSearch: document.getElementById('access-search'),
+            accessIp: document.getElementById('access-ip'),
+            accessStatus: document.getElementById('access-status'),
+            accessPageInfo: document.getElementById('access-page'),
+            accessPagesInfo: document.getElementById('access-pages'),
+            accessShowing: document.getElementById('access-showing'),
+            accessTotal: document.getElementById('access-total'),
+
+            // Error Log
+            errorTbody: document.getElementById('error-tbody'),
+            errorPrev: document.getElementById('error-prev'),
+            errorNext: document.getElementById('error-next'),
+            errorSearch: document.getElementById('error-search'),
+            errorLevel: document.getElementById('error-level'),
+            errorPageInfo: document.getElementById('error-page'),
+            errorPagesInfo: document.getElementById('error-pages'),
+            errorShowing: document.getElementById('error-showing'),
+            errorTotal: document.getElementById('error-total'),
+
+            // Tail
+            tailBody: document.getElementById('live-tail-body'),
+            tailPause: document.getElementById('tail-pause'),
+            tailClear: document.getElementById('tail-clear'),
+            tailSourceBtns: document.querySelectorAll('[id^="tail-source-"]'),
+
+            // Stats
+            statTotalReq: document.getElementById('stat-total-req'),
+            statSuccessRate: document.getElementById('stat-success-rate'),
+            statErrorCount: document.getElementById('stat-error-count'),
+            statTodayErrors: document.getElementById('stat-today-errors'),
+            statBandwidth: document.getElementById('stat-bandwidth'),
+            topIpsList: document.getElementById('top-ips-list'),
+            topUrlsList: document.getElementById('top-urls-list'),
+
+            refreshBtn: document.getElementById('refresh-btn')
+        };
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initTabs();
+            initCharts();
+            loadDashboard();
+            loadAccessLogs();
+            loadErrorLogs();
+            initTail();
+            setupSocketListeners();
+        });
+
+        // --- Tabs ---
+        function initTabs() {
+            els.tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    els.tabs.forEach(t => t.classList.remove('active'));
+                    els.contents.forEach(c => c.classList.remove('active'));
+
+                    tab.classList.add('active');
+                    const tabId = tab.dataset.tab;
+                    document.getElementById(`tab-${tabId}`).classList.add('active');
+                    state.activeTab = tabId;
+
+                    if (tabId === 'dashboard') loadDashboard();
+                });
+            });
+
+            els.refreshBtn.addEventListener('click', () => {
+                loadDashboard();
+                if (state.activeTab === 'access') loadAccessLogs();
+                if (state.activeTab === 'error') loadErrorLogs();
+            });
+        }
+
+        // --- Dashboard & Stats ---
+        async function loadDashboard() {
+            try {
+                const res = await fetch('/api/stats');
+                const stats = await res.json();
+                state.stats = stats;
+                renderStats(stats);
+            } catch (e) {
+                console.error('Failed to load stats', e);
+            }
+        }
+
+        function renderStats(stats) {
+            // Cards
+            els.statTotalReq.textContent = stats.totalRequests.toLocaleString();
+
+            const successCount = (stats.statusCodes['2xx'] || 0) + (stats.statusCodes['3xx'] || 0);
+            const successRate = stats.totalRequests ? (successCount / stats.totalRequests * 100).toFixed(1) : 0;
+            els.statSuccessRate.textContent = `${successRate}%`;
+
+            els.statErrorCount.textContent = stats.errorCount.toLocaleString();
+            els.statTodayErrors.textContent = stats.todayErrors;
+
+            const mb = (stats.totalBytes / 1024 / 1024).toFixed(2);
+            els.statBandwidth.textContent = `${mb} MB`;
+
+            // Top IPs
+            els.topIpsList.innerHTML = stats.topIPs.map((item, idx) => `
+                <li class="top-item">
+                    <span class="top-rank">${idx + 1}</span>
+                    <span class="top-label" title="${item[0]}">${item[0]}</span>
+                    <span class="top-count">${item[1]}</span>
+                </li>
+            `).join('');
+
+            // Top URLs
+            els.topUrlsList.innerHTML = stats.topURLs.map((item, idx) => `
+                <li class="top-item">
+                    <span class="top-rank">${idx + 1}</span>
+                    <span class="top-label" title="${item[0]}">${item[0]}</span>
+                    <span class="top-count">${item[1]}</span>
+                </li>
+            `).join('');
+
+            // Browser Chart
+            if (stats.topBrowsers && stats.topBrowsers.length) {
+                if (state.charts.browser) {
+                    state.charts.browser.data.labels = stats.topBrowsers.map(i => i[0]);
+                    state.charts.browser.data.datasets[0].data = stats.topBrowsers.map(i => i[1]);
+                    state.charts.browser.update();
+                } else {
+                    const ctx = document.getElementById('browserChart').getContext('2d');
+                    state.charts.browser = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: stats.topBrowsers.map(i => i[0]),
+                            datasets: [{
+                                data: stats.topBrowsers.map(i => i[1]),
+                                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+                                borderWidth: 0
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#94a3b8' } } } }
+                    });
+                }
+            }
+
+            // Update Charts
+            updateCharts(stats);
+        }
+
+        function initCharts() {
+            // Traffic Chart
+            const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+            state.charts.traffic = new Chart(trafficCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+                    datasets: [{
+                        label: 'Requests',
+                        data: Array(24).fill(0),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // Status Chart
+            const statusCtx = document.getElementById('statusChart').getContext('2d');
+            state.charts.status = new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['2xx Success', '3xx Redirect', '4xx Client Err', '5xx Server Err'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { color: '#94a3b8' } } }
+                }
+            });
+
+            // Create placeholders for browser chart so renderStats can init it
+            const chartsGrid = document.querySelector('.charts-grid');
+            if (!document.getElementById('browserChart')) {
+                const div = document.createElement('div');
+                div.className = 'chart-card';
+                div.innerHTML = '<div class="chart-title">Top Browsers</div><div class="chart-container"><canvas id="browserChart"></canvas></div>';
+                chartsGrid.appendChild(div);
+            }
+        }
+
+        function updateCharts(stats) {
+            // Traffic
+            state.charts.traffic.data.datasets[0].data = stats.requestsPerHour;
+            state.charts.traffic.update();
+
+            // Status
+            state.charts.status.data.datasets[0].data = [
+                stats.statusCodes['2xx'],
+                stats.statusCodes['3xx'],
+                stats.statusCodes['4xx'],
+                stats.statusCodes['5xx']
+            ];
+            state.charts.status.update();
+        }
+
+        // --- Access Logs ---
+        async function loadAccessLogs() {
+            // Ensure filters are up to date from inputs if not handled by event
+            state.access.filters.search = els.accessSearch.value;
+            state.access.filters.ip = els.accessIp.value;
+            state.access.filters.status = els.accessStatus.value;
+
+            const qs = new URLSearchParams({
+                page: state.access.page,
+                limit: state.access.limit,
+                search: state.access.filters.search,
+                ip: state.access.filters.ip,
+                status: state.access.filters.status
+            });
+
+            // Handle date range
+            if (state.access.filters.range === 'today') {
+                const today = new Date().toISOString().split('T')[0];
+                qs.append('startDate', today);
+                qs.append('endDate', today);
+            }
+
+            const res = await fetch(`/api/access-logs?${qs}`);
+            const data = await res.json();
+
+            state.access.total = data.matchingCount;
+            renderAccessLogs(data.logs);
+            renderAccessPagination(data.page, data.totalPages);
+        }
+
+        function renderAccessLogs(logs) {
+            if (!logs.length) {
+                els.accessTbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-secondary">No logs found</td></tr>';
+                return;
+            }
+
+            els.accessTbody.innerHTML = logs.map(log => {
+                const method = log.request.split(' ')[0] || 'UNK';
+                const path = log.request.split(' ')[1] || log.request;
+                const statusClass = `status-${log.status.charAt(0)}xx`;
+                const methodClass = `method-${(method || 'UNK').toUpperCase().replace(/[^A-Z]/g, '')}`;
+
+                // Domain/Referer Logic
+                let domain = '-';
+                if (log.referer && log.referer !== '-') {
+                    try {
+                        const url = new URL(log.referer);
+                        domain = url.hostname;
+                    } catch (e) { domain = log.referer; }
+                }
+
+                // Raw Data Encoding
+                const rawSafe = encodeURIComponent(log.raw || 'N/A');
+
+                return `
+                <tr>
+                    <td><span class="method-badge ${methodClass}">${method}</span></td>
+                    <td><span class="status-badge ${statusClass}">${log.status}</span></td>
+                    <td class="text-sm text-secondary">${log.timestampStr}</td>
+                    <td class="truncate" style="max-width: 200px;" title="${path}">${path}</td>
+                    <td class="truncate" style="max-width: 150px;" title="${log.referer}">${domain}</td>
+                     <td>
+                        <div>${log.ip}</div>
+                        <div style="font-size: 11px; color: #64748b;">${log.browser || ''} ${log.os ? ' on ' + log.os : ''}</div>
+                    </td>
+                    <td class="text-sm text-secondary">${log.bytes} B</td>
+                    <td>
+                        <button class="quick-btn" style="padding: 4px 8px; font-size: 11px;" onclick="showRaw('${rawSafe}')">Raw</button>
+                    </td>
+                </tr>
+                `;
+            }).join('');
+
+            els.accessShowing.textContent = logs.length;
+            els.accessTotal.textContent = state.access.total;
+        }
+
+        // Global function for raw view
+        window.showRaw = function (rawEncoded) {
+            const raw = decodeURIComponent(rawEncoded);
+            alert("Raw Log Entry:\n\n" + raw);
+        };
+
+
+        function renderAccessPagination(page, total) {
+            els.accessPageInfo.textContent = page;
+            els.accessPagesInfo.textContent = total;
+            els.accessPrev.disabled = page <= 1;
+            els.accessNext.disabled = page >= total;
+        }
+
+        // Access log listeners
+        [els.accessSearch, els.accessIp, els.accessStatus].forEach(input => {
+            input.addEventListener('input', debounce(() => {
+                state.access.page = 1;
+                loadAccessLogs();
+            }, 500));
+        });
+
+        document.querySelectorAll('#tab-access .quick-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('#tab-access .quick-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                state.access.filters.range = e.target.dataset.range;
+                state.access.page = 1;
+                loadAccessLogs();
+            });
+        });
+
+        els.accessPrev.addEventListener('click', () => {
+            if (state.access.page > 1) {
+                state.access.page--;
+                loadAccessLogs();
+            }
+        });
+
+        els.accessNext.addEventListener('click', () => {
+            state.access.page++;
+            loadAccessLogs();
+        });
+
+        // --- Error Logs ---
+        async function loadErrorLogs() {
+            const qs = new URLSearchParams({
+                page: state.error.page,
+                limit: state.error.limit,
+                search: state.error.filters.search,
+                level: state.error.filters.level
+            });
+
+            if (state.error.filters.range === 'today') {
+                const today = new Date().toISOString().split('T')[0];
+                qs.append('startDate', today);
+                qs.append('endDate', today);
+            }
+
+            const res = await fetch(`/api/error-logs?${qs}`);
+            const data = await res.json();
+
+            state.error.total = data.matchingCount;
+            renderErrorLogs(data.logs);
+            renderErrorPagination(data.page, data.totalPages);
+        }
+
+        function renderErrorLogs(logs) {
+            if (!logs.length) {
+                els.errorTbody.innerHTML = '<tr><td colspan="3" class="text-center p-8 text-secondary">No logs found</td></tr>';
+                return;
+            }
+
+            els.errorTbody.innerHTML = logs.map(log => {
+                const levelClass = `level-${log.level.toLowerCase()}`;
+                return `
+                <tr>
+                    <td><span class="level-badge ${levelClass}">${log.level}</span></td>
+                    <td class="text-sm text-secondary">${log.timestamp}</td>
+                    <td class="truncate" title="${log.message}">${log.message}</td>
+                </tr>
+                `;
+            }).join('');
+
+            els.errorShowing.textContent = logs.length;
+            els.errorTotal.textContent = state.error.total;
+        }
+
+        function renderErrorPagination(page, total) {
+            els.errorPageInfo.textContent = page;
+            els.errorPagesInfo.textContent = total;
+            els.errorPrev.disabled = page <= 1;
+            els.errorNext.disabled = page >= total;
+        }
+
+        // Error log listeners
+        [els.errorSearch, els.errorLevel].forEach(input => {
+            input.addEventListener('input', debounce(() => {
+                state.error.page = 1;
+                loadErrorLogs();
+            }, 500));
+        });
+
+        document.querySelectorAll('#tab-error .quick-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('#tab-error .quick-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                state.error.filters.range = e.target.dataset.range;
+                state.error.page = 1;
+                loadErrorLogs();
+            });
+        });
+
+        els.errorPrev.addEventListener('click', () => {
+            if (state.error.page > 1) {
+                state.error.page--;
+                loadErrorLogs();
+            }
+        });
+
+        els.errorNext.addEventListener('click', () => {
+            state.error.page++;
+            loadErrorLogs();
+        });
+
+
+        // --- Live Tail ---
+        async function initTail() {
+            // Load initial tail logs
+            const res = await fetch('/api/tail?lines=50');
+            const data = await res.json();
+            data.logs.forEach(addTailLog);
+        }
+
+        function addTailLog(log) {
+            if (!state.tail.active) return;
+
+            // Filter source
+            if (state.tail.source !== 'both') {
+                if (log.type !== state.tail.source) return;
+            }
+
+            const div = document.createElement('div');
+            div.className = 'log-line';
+
+            if (log.type === 'access') {
+                div.innerHTML = `
+                    <span class="log-time">[${log.timestampStr}]</span>
+                    <span style="color: #64748b;">${log.ip}</span>
+                    <span style="color: ${getStatusColor(log.status)}; font-weight: bold; margin: 0 8px;">${log.status}</span>
+                    <span style="color: #e2e8f0;">${log.request}</span>
+                `;
+            } else {
+                div.innerHTML = `
+                    <span class="log-time">[${log.timestamp}]</span>
+                    <span class="log-level level-${log.level.toLowerCase()}">${log.level}</span>
+                    <span style="color: #fca5a5;">${log.message}</span>
+                `;
+            }
+
+            els.tailBody.appendChild(div);
+
+            // Auto scroll
+            els.tailBody.scrollTop = els.tailBody.scrollHeight;
+
+            // Limit stored lines
+            while (els.tailBody.children.length > 200) {
+                els.tailBody.removeChild(els.tailBody.firstChild);
+            }
+        }
+
+        els.tailClear.addEventListener('click', () => {
+            els.tailBody.innerHTML = '';
+        });
+
+        els.tailPause.addEventListener('click', () => {
+            state.tail.active = !state.tail.active;
+            els.tailPause.textContent = state.tail.active ? 'Pause' : 'Resume';
+            els.tailPause.classList.toggle('active', !state.tail.active);
+        });
+
+        els.tailSourceBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.id;
+                state.tail.source = id.replace('tail-source-', '');
+                els.tailSourceBtns.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+            });
+        });
+
+        // --- Socket Listeners ---
+        function setupSocketListeners() {
+            socket.on('newLogs', (logs) => {
+                // Update stats live
+                if (state.stats) {
+                    // Simple mock update, real re-fetch would be better for consistency
+                    logs.forEach(log => {
+                        if (log.type === 'access') {
+                            state.stats.totalRequests++;
+                            // Update DOM instantly for better feel
+                            els.statTotalReq.textContent = parseInt(els.statTotalReq.textContent.replace(/,/g, '')) + 1;
+                        } else {
+                            state.stats.errorCount++;
+                            els.statErrorCount.textContent = parseInt(els.statErrorCount.textContent.replace(/,/g, '')) + 1;
+                        }
+                        // Add to tail
+                        addTailLog(log);
+                    });
+                }
+            });
+        }
+
+        // --- Utils ---
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        function getStatusColor(status) {
+            if (status.startsWith('2')) return '#10b981';
+            if (status.startsWith('3')) return '#3b82f6';
+            if (status.startsWith('4')) return '#f59e0b';
+            if (status.startsWith('5')) return '#ef4444';
+            return '#94a3b8';
+        }
+
+    </script>
+</body>
+
+</html>
