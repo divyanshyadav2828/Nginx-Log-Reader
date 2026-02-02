@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx Log Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style type="text/tailwindcss">
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        .truncate-cell {
+            max-width: 250px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+        }
+        .truncate-cell:hover {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: unset;
+            word-break: break-all;
+        }
+        /* Styles for active and inactive tabs */
+        .tab-btn {
+            @apply px-4 py-2 font-medium text-sm text-gray-600 bg-gray-100 rounded-t-lg hover:bg-gray-200;
+        }
+        .tab-btn.active {
+            @apply text-blue-600 bg-white border-b-0 border-t border-l border-r border-gray-300;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Nginx Log Viewer</h1>
+            <p class="text-gray-600">View your `access.log` and `error.log` files.</p>
+        </header>
+
+        <div id="loading" class="flex items-center justify-center p-8 bg-white rounded-lg shadow-md">
+            <svg class="animate-spin h-5 w-5 text-blue-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-gray-700">Loading log file...</span>
+        </div>
+
+        <div id="error-box" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative my-4" role="alert">
+            <strong class="font-bold">Error!</strong>
+            <span class="block sm:inline" id="error-message"></span>
+        </div>
+
+        <main id="log-content" class="hidden">
+            
+            <div class="mb-0 -mb-px">
+                <button id="tab-access" class="tab-btn active" data-tab="access">Access Log</button>
+                <button id="tab-error" class="tab-btn" data-tab="error">Error Log</button>
+            </div>
+
+            <div class="bg-white p-4 rounded-b-lg rounded-tr-lg shadow-md mb-6">
+                <div class="mb-4">
+                    <label for="search-all" class="block text-sm font-medium text-gray-700">General Search</label>
+                    <input type="text" id="search-all" placeholder="Search all fields..." class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                        <label for="start-date" class="block text-sm font-medium text-gray-700">Start Date</label>
+                        <input type="date" id="start-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                    <div>
+                        <label for="end-date" class="block text-sm font-medium text-gray-700">End Date</label>
+                        <input type="date" id="end-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Quick Select</label>
+                        <div class="mt-1 flex flex-wrap gap-2">
+                            <button id="date-today" class="date-btn">Today</button>
+                            <button id="date-week" class="date-btn">Last 7 Days</button>
+                            <button id="date-month" class="date-btn">Last 30 Days</button>
+                            <button id="date-clear" class="date-btn-clear">Clear</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="access-log-filters" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="filter-ip" class="block text-sm font-medium text-gray-700">Filter by IP</label>
+                        <input type="text" id="filter-ip" placeholder="e.g., 192.168.1.1" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                    <div>
+                        <label for="filter-status" class="block text-sm font-medium text-gray-700">Filter by Status</Glabel>
+                        <input type="text" id="filter-status" placeholder="e.g., 200, 404, or 4xx" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                </div>
+
+                <div id="error-log-filters" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="filter-level" class="block text-sm font-medium text-gray-700">Filter by Level</label>
+                        <input type="text" id="filter-level" placeholder="e.g., error, warn, info" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4 text-sm text-gray-600">
+                Showing <span id="showing-count" class="font-semibold text-gray-800">0</span> of <span id="total-count" class="font-semibold text-gray-800">0</span> matching entries.
+            </div>
+
+            <div class="overflow-x-auto bg-white rounded-lg shadow-md">
+                <table id="access-log-table" class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Request</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bytes</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Referer</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User Agent</th>
+                        </tr>
+                    </thead>
+                    <tbody id="access-log-body" class="bg-white divide-y divide-gray-200">
+                    </tbody>
+                </table>
+                
+                <table id="error-log-table" class="hidden min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Level</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="error-log-body" class="bg-white divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
+        <div id="pagination-controls" class="flex items-center justify-between mt-4">
+            </div>
+    </div>
+    
+    <style>
+        .date-btn { @apply px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50; }
+        .date-btn-clear { @apply px-3 py-1 text-sm font-medium text-red-700 bg-red-50 border border-red-300 rounded-md hover:bg-red-100; }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Global State ---
+            let activeTab = 'access'; // 'access' or 'error'
+            let currentPage = 1;
+            let currentLimit = 50;
+            let isLoading = false;
+            let currentFetchController = null;
+
+            // --- UI Elements ---
+            const loadingEl = document.getElementById('loading');
+            const errorBoxEl = document.getElementById('error-box');
+            const errorMessageEl = document.getElementById('error-message');
+            const logContentEl = document.getElementById('log-content');
+            
+            // Tabs
+            const tabAccessBtn = document.getElementById('tab-access');
+            const tabErrorBtn = document.getElementById('tab-error');
+
+            // Tables
+            const accessTable = document.getElementById('access-log-table');
+            const accessTableBody = document.getElementById('access-log-body');
+            const errorTable = document.getElementById('error-log-table');
+            const errorTableBody = document.getElementById('error-log-body');
+            
+            // Filters
+            const searchInput = document.getElementById('search-all');
+            const startDateInput = document.getElementById('start-date');
+            const endDateInput = document.getElementById('end-date');
+            
+            const accessFiltersEl = document.getElementById('access-log-filters');
+            const ipInput = document.getElementById('filter-ip');
+            const statusInput = document.getElementById('filter-status');
+            
+            const errorFiltersEl = document.getElementById('error-log-filters');
+            const levelInput = document.getElementById('filter-level');
+
+            // Date Buttons
+            const dateTodayBtn = document.getElementById('date-today');
+            const dateWeekBtn = document.getElementById('date-week');
+            const dateMonthBtn = document.getElementById('date-month');
+            const dateClearBtn = document.getElementById('date-clear');
+
+            // Stats & Pagination
+            const showingCountEl = document.getElementById('showing-count');
+            const totalCountEl = document.getElementById('total-count');
+            const paginationControlsEl = document.getElementById('pagination-controls');
+            
+            // --- Helper Functions ---
+
+            /** Debounce function */
+            function debounce(func, delay = 350) {
+                let timeoutId;
+                return (...args) => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => {
+                        func.apply(this, args);
+                    }, delay);
+                };
+            }
+
+            /** Get today's date as YYYY-MM-DD */
+            function getISODateString(date) {
+                return date.getFullYear() + '-' + 
+                       (date.getMonth() + 1).toString().padStart(2, '0') + '-' + 
+                       date.getDate().toString().padStart(2, '0');
+            }
+            
+            /** Get status color (unchanged) */
+            function getStatusColor(status) {
+                const s = parseInt(status, 10);
+                if (s >= 500) return 'bg-red-200 text-red-800';
+                if (s >= 400) return 'bg-yellow-200 text-yellow-800';
+                if (s >= 300) return 'bg-blue-200 text-blue-800';
+                if (s >= 200) return 'bg-green-200 text-green-800';
+                return 'bg-gray-200 text-gray-800';
+            }
+
+            /** Get error log level color */
+            function getErrorLevelColor(level) {
+                const l = level.toLowerCase();
+                if (l.includes('error') || l.includes('crit') || l.includes('alert') || l.includes('emerg')) {
+                    return 'bg-red-200 text-red-800';
+                }
+                if (l.includes('warn')) {
+                    return 'bg-yellow-200 text-yellow-800';
+                }
+                if (l.includes('notice')) {
+                    return 'bg-blue-200 text-blue-800';
+                }
+                if (l.includes('info')) {
+                    return 'bg-green-200 text-green-800';
+                }
+                return 'bg-gray-200 text-gray-800';
+            }
+
+            /** Show error (unchanged) */
+            function showError(message) {
+                errorMessageEl.textContent = message;
+                errorBoxEl.classList.remove('hidden');
+                loadingEl.classList.add('hidden');
+            }
+
+            /** Switch active tab UI */
+            function switchTab(tab) {
+                activeTab = tab;
+                currentPage = 1; // Reset page on tab switch
+                
+                if (tab === 'access') {
+                    // Update buttons
+                    tabAccessBtn.classList.add('active');
+                    tabErrorBtn.classList.remove('active');
+                    // Update filters
+                    accessFiltersEl.classList.remove('hidden');
+                    errorFiltersEl.classList.add('hidden');
+                    // Update tables
+                    accessTable.classList.remove('hidden');
+                    errorTable.classList.add('hidden');
+                } else {
+                    // Update buttons
+                    tabAccessBtn.classList.remove('active');
+                    tabErrorBtn.classList.add('active');
+                    // Update filters
+                    accessFiltersEl.classList.add('hidden');
+                    errorFiltersEl.classList.remove('hidden');
+                    // Update tables
+                    accessTable.classList.add('hidden');
+                    errorTable.classList.remove('hidden');
+                }
+                
+                // Fetch data for the new tab
+                fetchData(true);
+            }
+
+            // --- Data Rendering ---
+
+            /** Renders ACCESS log rows */
+            function renderAccessTable(logs) {
+                const fragment = document.createDocumentFragment();
+                logs.forEach(log => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-gray-50';
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(log.status)}">
+                                ${log.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${log.ip}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.timestampStr}</td>
+                        <td class="px-6 py-4 text-sm text-gray-700 truncate-cell" title="${log.request}">${log.request}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.bytes}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500 truncate-cell" title="${log.referer}">${log.referer}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500 truncate-cell" title="${log.userAgent}">${log.userAgent}</td>
+                    `;
+                    fragment.appendChild(tr);
+                });
+                accessTableBody.innerHTML = '';
+                accessTableBody.appendChild(fragment);
+            }
+
+            /** Renders ERROR log rows */
+            function renderErrorTable(logs) {
+                const fragment = document.createDocumentFragment();
+                logs.forEach(log => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-gray-50';
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getErrorLevelColor(log.level)}">
+                                ${log.level}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.timestamp}</td>
+                        <td class="px-6 py-4 text-sm text-gray-700 truncate-cell" title="${log.message}">${log.message}</td>
+                    `;
+                    fragment.appendChild(tr);
+                });
+                errorTableBody.innerHTML = '';
+                errorTableBody.appendChild(fragment);
+            }
+
+            /** Renders pagination (mostly unchanged) */
+            function renderPagination(page, totalPages, matchingCount) {
+                paginationControlsEl.innerHTML = '';
+                
+                const startRecord = Math.min((page - 1) * currentLimit + 1, matchingCount);
+                const endRecord = Math.min(page * currentLimit, matchingCount);
+                
+                showingCountEl.textContent = `${startRecord}-${endRecord}`;
+                totalCountEl.textContent = matchingCount;
+
+                if (matchingCount === 0) {
+                    showingCountEl.textContent = '0';
+                    return;
+                }
+
+                const prevButton = document.createElement('button');
+                prevButton.textContent = 'Previous';
+                prevButton.className = 'px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed';
+                prevButton.disabled = page <= 1;
+                prevButton.addEventListener('click', () => { if (currentPage > 1) { currentPage--; fetchData(); } });
+                paginationControlsEl.appendChild(prevButton);
+
+                const pageInfo = document.createElement('span');
+                pageInfo.className = 'text-sm text-gray-700';
+                pageInfo.textContent = `Page ${page} of ${totalPages}`;
+                paginationControlsEl.appendChild(pageInfo);
+
+                const nextButton = document.createElement('button');
+                nextButton.textContent = 'Next';
+                nextButton.className = 'px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed';
+                nextButton.disabled = page >= totalPages;
+                nextButton.addEventListener('click', () => { if (currentPage < totalPages) { currentPage++; fetchData(); } });
+                paginationControlsEl.appendChild(nextButton);
+            }
+
+            // --- Data Fetching ---
+
+            /**
+             * Main fetch dispatcher. Calls the correct API based on the active tab.
+             */
+            async function fetchData(resetPage = false) {
+                if (isLoading) {
+                    if (currentFetchController) currentFetchController.abort();
+                }
+                isLoading = true;
+                
+                if (resetPage) currentPage = 1;
+
+                if (!logContentEl.classList.contains('hidden')) {
+                    accessTableBody.style.opacity = '0.5';
+                    errorTableBody.style.opacity = '0.5';
+                }
+
+                currentFetchController = new AbortController();
+                const signal = currentFetchController.signal;
+
+                // Build common query parameters
+                const url = new URL(window.location.origin);
+                url.searchParams.append('page', currentPage);
+                url.searchParams.append('limit', currentLimit);
+                
+                const searchVal = searchInput.value.trim();
+                if (searchVal) url.searchParams.append('search', searchVal);
+                
+                const startVal = startDateInput.value.trim();
+                if (startVal) url.searchParams.append('startDate', startVal);
+                
+                const endVal = endDateInput.value.trim();
+                if (endVal) url.searchParams.append('endDate', endVal);
+
+                // Add tab-specific parameters
+                if (activeTab === 'access') {
+                    url.pathname = '/api/access-logs';
+                    const ipVal = ipInput.value.trim();
+                    if (ipVal) url.searchParams.append('ip', ipVal);
+                    
+                    const statusVal = statusInput.value.trim();
+                    if (statusVal) url.searchParams.append('status', statusVal);
+                } else {
+                    url.pathname = '/api/error-logs';
+                    const levelVal = levelInput.value.trim();
+                    if (levelVal) url.searchParams.append('level', levelVal);
+                }
+
+                try {
+                    const response = await fetch(url, { signal });
+                    
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(`Server Error: ${errData.error || response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+
+                    if (data.logs.length === 0 && data.matchingCount > 0) {
+                        fetchData(true); // Reset to page 1
+                        return;
+                    }
+                    
+                    // Render the correct table
+                    if (activeTab === 'access') {
+                        renderAccessTable(data.logs);
+                    } else {
+                        renderErrorTable(data.logs);
+                    }
+                    
+                    renderPagination(data.page, data.totalPages, data.matchingCount);
+                    
+                    loadingEl.classList.add('hidden');
+                    logContentEl.classList.remove('hidden');
+                    errorBoxEl.classList.add('hidden');
+
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        console.log('Fetch aborted');
+                        return;
+                    }
+                    console.error('Fetch Error:', error);
+                    showError(error.message);
+                } finally {
+                    isLoading = false;
+                    accessTableBody.style.opacity = '1';
+                    errorTableBody.style.opacity = '1';
+                }
+            }
+            
+            // --- Event Listeners ---
+            
+            // Debounced fetch function (resets page)
+            const debouncedFetch = debounce(() => fetchData(true), 350);
+
+            // Tab listeners
+            tabAccessBtn.addEventListener('click', () => switchTab('access'));
+            tabErrorBtn.addEventListener('click', () => switchTab('error'));
+
+            // Filter listeners
+            [searchInput, startDateInput, endDateInput, ipInput, statusInput, levelInput].forEach(input => {
+                input.addEventListener('input', debouncedFetch);
+            });
+
+            // Date Quick-Set Listeners
+            dateTodayBtn.addEventListener('click', () => {
+                const today = getISODateString(new Date());
+                startDateInput.value = today;
+                endDateInput.value = today;
+                fetchData(true);
+            });
+            
+            dateWeekBtn.addEventListener('click', () => {
+                const today = new Date();
+                const weekAgo = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000); // 6 days ago + today = 7 days
+                startDateInput.value = getISODateString(weekAgo);
+                endDateInput.value = getISODateString(today);
+                fetchData(true);
+            });
+            
+            dateMonthBtn.addEventListener('click', () => {
+                const today = new Date();
+                const monthAgo = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000); // 29 days ago + today = 30 days
+                startDateInput.value = getISODateString(monthAgo);
+                endDateInput.value = getISODateString(today);
+                fetchData(true);
+            });
+
+            dateClearBtn.addEventListener('click', () => {
+                startDateInput.value = '';
+                endDateInput.value = '';
+                fetchData(true);
+            });
+
+            // --- Initial Load ---
+            fetchData();
+        });
+    </script>
+</body>
+</html>
