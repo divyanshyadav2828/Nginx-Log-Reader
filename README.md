@@ -25,7 +25,9 @@
 
 ### 📸 Browser Dashboard Preview
 <div align="center">
-  <img src="https://raw.githubusercontent.com/divyanshyadav2828/Nginx-Log-Reader/refs/heads/main/images/Screenshot%20(206).png" alt="Nginx Log Reader Browser Dashboard" width="800" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+  <img src="https://raw.githubusercontent.com/divyanshyadav2828/Nginx-Log-Reader/refs/heads/main/images/NGINX_LOG_READER1.png" alt="Nginx Log Reader Browser Dashboard" width="800" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+  <img src="https://raw.githubusercontent.com/divyanshyadav2828/Nginx-Log-Reader/refs/heads/main/images/NGINX_LOG_READER2.png" alt="Nginx Log Reader Browser Dashboard" width="800" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+  <img src="https://raw.githubusercontent.com/divyanshyadav2828/Nginx-Log-Reader/refs/heads/main/images/NGINX_LOG_READER3.png" alt="Nginx Log Reader Browser Dashboard" width="800" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
 </div>
 
 ---
